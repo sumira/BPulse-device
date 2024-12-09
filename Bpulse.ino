@@ -159,7 +159,7 @@ void loop() {
 
   // Publish a test message every 3 seconds
   static unsigned long lastMsg = 0;
-  if (millis() - lastMsg > 3000) {
+  if (millis() - lastMsg > 4000) {
     lastMsg = millis();
     client.publish("test/topic", "Hello from ESP32!");
   }

@@ -4,6 +4,7 @@
 #include <SPI.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_PCD8544.h>
+const int LED_BUILTIN = 14;
 
 // Display setup
 Adafruit_PCD8544 display = Adafruit_PCD8544(18, 23, 4, 15, 2);
@@ -12,13 +13,13 @@ Adafruit_PCD8544 display = Adafruit_PCD8544(18, 23, 4, 15, 2);
 const char* ssid = "POCO";
 const char* password = "11111111";
 
-// HiveMQ Cloud MQTT broker credentials
+// MQTT broker credentials
 const char* mqtt_server = "29e69e59ef7d4c5eb41e2507cb41dfc7.s1.eu.hivemq.cloud";
 const int mqtt_port = 8883;
 const char* mqtt_user = "node";
 const char* mqtt_password = "ndm9897";
 
-// Root certificate for HiveMQ Cloud
+// Root certificate
 static const char *root_ca PROGMEM = R"EOF(
 -----BEGIN CERTIFICATE-----
 MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
@@ -57,7 +58,6 @@ emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
 WiFiClientSecure espClient;
 PubSubClient client(espClient);
 
-// Helper functions for display
 void displayText(const String& text, uint8_t textSize = 1, bool invert = false) {
   display.clearDisplay();
   display.setTextSize(textSize);
@@ -90,28 +90,63 @@ void drawCenteredBatteryIcon(int percentage) {
   int fillWidth = map(percentage, 0, 100, 0, batteryWidth - 2);
   display.fillRect(x + 1, y + 1, fillWidth, batteryHeight - 2, BLACK);
 }
+void displayWiFiLogo() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  display.println("Connecting to WiFi...");
+  // Draw a simple WiFi icon
+  display.drawLine(10, 30, 30, 30, BLACK); // Base line
+  display.drawLine(15, 25, 25, 25, BLACK); // Middle line
+  display.drawLine(18, 20, 22, 20, BLACK); // Top line
+  display.fillCircle(20, 35, 2, BLACK);    // Dot
+  display.display();
+}
+
+void displayCloudLogo() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  display.println("Connecting to Cloud...");
+  // Draw a simple cloud icon
+  display.fillCircle(20, 30, 5, BLACK); // Left part of cloud
+  display.fillCircle(30, 30, 7, BLACK); // Right part of cloud
+  display.fillRect(18, 32, 20, 5, BLACK); // Bottom part of cloud
+  display.display();
+}
 
 // Wi-Fi setup
 void setup_wifi() {
-  displayText("Connecting to WiFi...");
+  displayWiFiLogo(); 
   WiFi.begin(ssid, password);
-
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    displayText("Connecting...");
   }
-  displayText("WiFi Connected!");
+
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.println("WiFi Connected!");
+  display.display();;
 }
+
 
 // MQTT reconnect
 void reconnect() {
   while (!client.connected()) {
-    displayText("Connecting to MQTT...");
+    displayCloudLogo(); 
+
     if (client.connect("ESP32Client", mqtt_user, mqtt_password)) {
-      displayText("MQTT Connected!");
+      display.clearDisplay();
+      display.println("Connected with Bpulse Cloud!");
+      display.display();
+
+      // Subscribe to topics
       client.subscribe("test/integer");
+      client.subscribe("test/first"); 
     } else {
-      displayText("MQTT Connection Failed!");
+      display.clearDisplay();
+      display.println("MQTT Failed!");
+      display.display();
       delay(5000);
     }
   }
@@ -119,30 +154,53 @@ void reconnect() {
 
 // MQTT callback
 void callback(char* topic, byte* payload, unsigned int length) {
-  String message;
+  String message = "";
   for (int i = 0; i < length; i++) {
     message += (char)payload[i];
   }
 
-  displayText("Msg: " + message);
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  
+  display.println("Received:");
+  display.println("Topic:");
+  display.println(topic);
+  display.println("Message:");
+  display.println(message);
+  display.display();
+
+  if (String(topic) == "test/integer") {
+  if (message == "1") {
+    digitalWrite(LED_BUILTIN, LOW);  
+    } else if (message == "0") {
+    digitalWrite(LED_BUILTIN, HIGH); 
+    }
+ }
+
 }
 
 void setup() {
   Serial.begin(115200);
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH); 
+
+
   display.begin();
   display.setContrast(60);
   display.clearDisplay();
 
-  // Battery startup animation
   for (int i = 0; i <= 100; i += 10) {
-    display.clearDisplay();
-    centerText("BPulse", 2, 10);
-    drawCenteredBatteryIcon(i);
-    display.display();
-    delay(200);
-  }
+  display.clearDisplay();
+  centerText("BPulse", 2, 10);
+  drawCenteredBatteryIcon(i);
+  display.display();
+  delay(200);
+}
+
 
   setup_wifi();
+  delay(100);
 
   espClient.setCACert(root_ca);
   client.setServer(mqtt_server, mqtt_port);
@@ -151,16 +209,11 @@ void setup() {
   reconnect();
 }
 
+
+
 void loop() {
   if (!client.connected()) {
     reconnect();
   }
   client.loop();
-
-  // Publish a test message every 3 seconds
-  static unsigned long lastMsg = 0;
-  if (millis() - lastMsg > 4000) {
-    lastMsg = millis();
-    client.publish("test/topic", "Hello from ESP32!");
-  }
 }
